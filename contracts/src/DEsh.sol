@@ -2,15 +2,16 @@
 pragma solidity ^0.8.26;
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
-import {ERC1155} from "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
+import {IERC1155} from "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import {IERC1155Receiver} from "@openzeppelin/contracts/token/ERC1155/IERC1155Receiver.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
-
 contract DEsh is IERC1155Receiver, IERC721Receiver{
-
+    
     // token types 
     // 0 --> normal eth transfer 
     // 1 --> ERC20 token transfer 
@@ -33,7 +34,6 @@ contract DEsh is IERC1155Receiver, IERC721Receiver{
 
     // Array of deposits
     DepositItem[] public deposits;
-
 
 
     /**
@@ -153,13 +153,66 @@ contract DEsh is IERC1155Receiver, IERC721Receiver{
                     amount : values[i],
                     tokenId : ids[i],
                     timestamp : block.timestamp,
-                    tokenType : 4
+                    tokenType : 3
                 })
             );
         }
 
         return this.onERC1155BatchReceived.selector;
     }
+
+    /**
+     * @dev Returns true if this contract implements the interface defined by
+     * `interfaceId`. See the corresponding
+     * https://eips.ethereum.org/EIPS/eip-165#how-interfaces-are-identified[EIP section]
+     * to learn more about how these ids are created.
+     *
+     * This function call must use less than 30 000 gas.
+     */
+    function supportsInterface(bytes4 interfaceId) external pure override returns(bool){
+        return interfaceId == type(IERC721Receiver).interfaceId ||
+               interfaceId == type(IERC1155Receiver).interfaceId;
+    }
+
+
+
+    function createShittyLink(
+        address _tokenAddress,
+        uint8 _tokenType,
+        uint256 _amount,
+        uint256 _tokenId
+    ) public payable returns (uint256) {
+        require(_tokenType <= 3, "Token type cannot be accepted");
+
+
+        if(_tokenType == 0){
+            require(msg.value > 0, "send some ETHER to share");
+            _amount = msg.value;
+        } else if(_tokenType == 1){
+            IERC20 token = IERC20(_tokenAddress);
+            SafeERC20.safeTransferFrom(token, msg.sender, address(this), _amount);
+        } else if(_tokenType == 2){
+            IERC721 token = IERC721(_tokenAddress);
+            token.safeTransferFrom(msg.sender, address(this), _tokenId, "internal transfer");
+        } else if(_tokenType == 3){
+            IERC1155 token = IERC1155(_tokenAddress);
+            token.safeTransferFrom(msg.sender, address(this), _tokenId, _amount, "internl transfer");
+        }
+
+        
+        deposits.push(
+            DepositItem({
+                sender  : msg.sender,
+                tokenAddress : _tokenAddress,
+                amount : _amount,
+                tokenId : _tokenId,
+                timestamp : block.timestamp,
+                tokenType : _tokenType 
+            })
+        );
+        return deposits.length - 1;
+    }
+
 
 
 }
