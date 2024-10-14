@@ -20,7 +20,8 @@ contract DEsh is IERC1155Receiver, IERC721Receiver{
 
     // pubKey for safety while claiming the tokens
 
-    event DepositEvent(uint256 index);
+    event DepositEvent(address sender, uint256 index, uint8 tokenType, uint256 amount);
+    event WithdrawEvent(address receiver, uint256 index, uint8 tokenType, uint256 amount);
     struct DepositItem {
         address sender;
         address tokenAddress;
@@ -34,6 +35,19 @@ contract DEsh is IERC1155Receiver, IERC721Receiver{
 
     // Array of deposits
     DepositItem[] public deposits;
+
+
+    function getAll(address _address) public view returns (DepositItem[] memory) {
+        DepositItem[] memory _deposits = new DepositItem[](deposits.length);
+        uint indexToAdd = 0;
+        for(uint i=0; i<deposits.length; i++){
+            if(deposits[i].sender == _address){
+                _deposits[indexToAdd] = deposits[i];
+                indexToAdd++;
+            }
+        }
+        return _deposits;
+    }
 
 
     /**
@@ -68,7 +82,6 @@ contract DEsh is IERC1155Receiver, IERC721Receiver{
                 tokenType : 2
             })
         );
-        emit DepositEvent(deposits.length-1);
         return this.onERC721Received.selector;
     }
 
@@ -174,6 +187,33 @@ contract DEsh is IERC1155Receiver, IERC721Receiver{
                interfaceId == type(IERC1155Receiver).interfaceId;
     }
 
+    function receiveFund(
+        uint256 index
+    ) public payable returns (bool){
+        require(index < deposits.length, "Non existent Deposit ");
+        DepositItem memory deposit = deposits[index];
+        require(deposit.sender != msg.sender, "sender can't receive fund");
+        require(deposit.amount > 0, "Already received");
+        delete deposits[index];
+
+        if(deposit.tokenType == 0){
+            (bool sucess, ) = deposit.sender.call{value : deposit.amount}("");
+            require(sucess, "transfer FAILED");
+        }  else if(deposit.tokenType == 1){
+            IERC20 token = IERC20(deposit.tokenAddress);
+            SafeERC20.safeTransferFrom(token, address(this), msg.sender, deposit.amount);
+        }  else if(deposit.tokenType == 2){
+            IERC721 token = IERC721(deposit.tokenAddress);
+            token.safeTransferFrom(address(this), msg.sender, deposit.tokenId, "");
+        }   else if(deposit.tokenType ==3){
+            IERC1155 token = IERC1155(deposit.tokenAddress);
+            token.safeTransferFrom(address(this), msg.sender, deposit.tokenId, deposit.amount, "");
+        }
+        emit WithdrawEvent(msg.sender, index, deposit.tokenType, deposit.amount);
+        return true;
+    }
+
+
 
 
     function createShittyLink(
@@ -183,7 +223,6 @@ contract DEsh is IERC1155Receiver, IERC721Receiver{
         uint256 _tokenId
     ) public payable returns (uint256) {
         require(_tokenType <= 3, "Token type cannot be accepted");
-
 
         if(_tokenType == 0){
             require(msg.value > 0, "send some ETHER to share");
@@ -199,7 +238,6 @@ contract DEsh is IERC1155Receiver, IERC721Receiver{
             token.safeTransferFrom(msg.sender, address(this), _tokenId, _amount, "internl transfer");
         }
 
-        
         deposits.push(
             DepositItem({
                 sender  : msg.sender,
@@ -210,7 +248,37 @@ contract DEsh is IERC1155Receiver, IERC721Receiver{
                 tokenType : _tokenType 
             })
         );
+        emit DepositEvent(msg.sender, deposits.length-1, _tokenType, _amount);
+
         return deposits.length - 1;
+    }
+
+
+
+    function revertCreation(
+        uint256 _index
+    ) public returns (bool)  {
+
+        require(_index < deposits.length, "Non existent Deposit ");
+        DepositItem memory deposit = deposits[_index];
+        require(deposit.sender == msg.sender, "only the sender can revert"); 
+
+        delete deposits[_index];
+
+        if(deposit.tokenType == 0){
+            (bool sucess, ) = deposit.sender.call{value : deposit.amount}("");
+            require(sucess, "transfer FAILED");
+        }  else if(deposit.tokenType == 1){
+            IERC20 token = IERC20(deposit.tokenAddress);
+            SafeERC20.safeTransferFrom(token, address(this), msg.sender, deposit.amount);
+        }  else if(deposit.tokenType == 2){
+            IERC721 token = IERC721(deposit.tokenAddress);
+            token.safeTransferFrom(address(this), msg.sender, deposit.tokenId, "");
+        }   else if(deposit.tokenType ==3){
+            IERC1155 token = IERC1155(deposit.tokenAddress);
+            token.safeTransferFrom(address(this), msg.sender, deposit.tokenId, deposit.amount, "");
+        }
+        return true;     
     }
 
 
